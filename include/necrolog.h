@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <iostream>
+#include <ctime>
 
 #ifdef __unix
 #include <unistd.h>
@@ -29,6 +30,7 @@ public:
 
 	template<typename T>
 	NecroLog& operator<<(const T &v) {m_necro->maybeSpace(); m_necro->m_os << v; return *this;}
+	NecroLog& nospace() {m_necro->setSpace(false); return *this;}
 
 	static NecroLog create(std::ostream &os, Level level, LogContext &&log_context)
 	{
@@ -44,7 +46,7 @@ public:
 			, m_logContext(std::move(log_context))
 		{
 #ifdef __unix
-			m_isTTI = (&m_os == &std::clog) && ::isatty(STDERR_FILENO);
+			m_isTTI = true;//(&m_os == &std::clog) && ::isatty(STDERR_FILENO);
 #endif
 		}
 		~Necro()
@@ -53,6 +55,8 @@ public:
 			m_os << std::endl;
 			m_os.flush();
 		}
+
+		void setSpace(bool b) {m_isSpace = b;}
 	private:
 		void maybeSpace()
 		{
@@ -92,34 +96,33 @@ public:
 		}
 		void prolog()
 		{
-			static int n = 0;
-			setTtyColor(TTYColor::Green, true) << ++n;
-			TTYColor log_color;
-			bool stay_bright = false;
+			std::time_t t = std::time(nullptr);
+			std::tm *tm = std::gmtime(&t); /// gmtime is not thread safe!!!
+			char buffer[80] = {0};
+			std::strftime(buffer, sizeof(buffer),"%Y-%m-%dT%H:%M:%S", tm);
+			setTtyColor(TTYColor::Green, true) << std::string(buffer);
+			setTtyColor(TTYColor::Yellow, true) << '[' << moduleFromFileName(m_logContext.file) << ':' << m_logContext.line << "]";
 			switch(m_level) {
 			case NecroLog::Level::Fatal:
-				stay_bright = true; log_color = TTYColor::Red; setTtyColor(log_color, true) << "|F|";
+				setTtyColor(TTYColor::Red, true) << "|F|";
 				break;
 			case NecroLog::Level::Error:
-				stay_bright = true; log_color = TTYColor::Red; setTtyColor(log_color, true) << "|E|";
+				setTtyColor(TTYColor::Red, true) << "|E|";
 				break;
 			case NecroLog::Level::Warning:
-				stay_bright = true; log_color = TTYColor::Magenta; setTtyColor(log_color, true) << "|W|";
+				setTtyColor(TTYColor::Magenta, true) << "|W|";
 				break;
 			case NecroLog::Level::Info:
-				log_color = TTYColor::Cyan; setTtyColor(log_color, true) << "|I|";
+				setTtyColor(TTYColor::Cyan, true) << "|I|";
 				break;
 			case NecroLog::Level::Debug:
-				log_color = TTYColor::White; setTtyColor(log_color, true) << "|D|";
+				setTtyColor(TTYColor::White, false) << "|D|";
 				break;
 			default:
-				log_color = TTYColor::Yellow; setTtyColor(log_color, true) << "|?|";
+				setTtyColor(TTYColor::Red, true) << "|?|";
 				break;
 			};
-			//if(context.category && context.category[0])
-			//	set_tty_color(TTYColor::Yellow, true) << '(' << context.category << ')';
-			setTtyColor(TTYColor::Yellow, true) << '[' << moduleFromFileName(m_logContext.file) << ':' << m_logContext.line << "] ";
-			setTtyColor(log_color, stay_bright);
+			m_os << " ";
 		}
 		void epilog()
 		{
