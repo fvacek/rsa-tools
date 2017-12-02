@@ -10,6 +10,14 @@
 #include <sstream>
 #include <iomanip>
 
+std::string int_to_hex( u_int16_t i )
+{
+	std::stringstream stream;
+	stream << std::setfill ('0') << std::setw(sizeof(i)*2)
+		   << std::hex << i;
+	return stream.str();
+}
+
 std::string unhex(const std::string &hex)
 {
 	std::string ret;
@@ -46,9 +54,26 @@ std::string hex(const std::string &bytes)
 std::string dump_digest(const std::string &bytes)
 {
 	std::string ret;
+	std::string hex_l, str_l, num_l = int_to_hex(0);
 	for (size_t i = 0; i < bytes.length(); ++i) {
-		std::string s = hex(bytes[i]);
-		ret += s + (( i + 1 ) % 16 == 0 ? "\n" : " ");
+		auto c = bytes[i];
+		std::string s = hex(c);
+		hex_l += s;
+		str_l.push_back((c >= ' ' && c < 127)? c: '.');
+		if(( i + 1 ) % 16 == 0) {
+			ret += num_l + ' ' + hex_l + " " + str_l + '\n';
+			hex_l.clear();
+			str_l.clear();
+			num_l = int_to_hex(i+1);
+		}
+		else {
+			hex_l.push_back(' ');
+		}
+	}
+	if(!hex_l.empty()) {
+		static constexpr size_t hex_len = 16 * 3;
+		std::string rest_l(hex_len - hex_l.length(), ' ');
+		ret += num_l + ' ' + hex_l + rest_l + " " + str_l + '\n';
 	}
 	return ret;
 }
@@ -102,16 +127,6 @@ std::string dump_pk(const std::string &title, mbedtls_pk_context *pk)
 	return ret;
 }
 
-template< typename T >
-std::string int_to_hex( T i )
-{
-	std::stringstream stream;
-	stream << "0x"
-		   << std::setfill ('0') << std::setw(sizeof(T)*2)
-		   << std::hex << i;
-	return stream.str();
-}
-
 std::string error2string(int err_no)
 {
 	char buff[1024];
@@ -121,7 +136,7 @@ std::string error2string(int err_no)
 
 int main(int argc, char *argv[])
 {
-	enum class Command {UNKNOWN, ENCRYPT, DECRYPT, CHECK, HELP};
+	enum class Command {UNKNOWN, ENCRYPT, DECRYPT, CHECK_KEYS, HELP};
 	Command command = Command::UNKNOWN;;
 	mbedtls_pk_context *pri_pk = nullptr;
 	mbedtls_pk_context *pub_pk = nullptr;
@@ -183,10 +198,10 @@ int main(int argc, char *argv[])
 				break;
 			input.push_back((char)c);
 		}
-		nDebug() << "input:" << input << hex(input);
 		if(o_ihex) {
 			input = unhex(input);
 		}
+		//nDebug() << "input: (" << input.length() << ") " << input << hex(input);
 	}
 
 	mbedtls_x509_crt x509;
@@ -236,7 +251,7 @@ int main(int argc, char *argv[])
 
 	if(command == Command::UNKNOWN) {
 		if(pub_pk && pri_pk) {
-			command = Command::CHECK;
+			command = Command::CHECK_KEYS;
 		}
 		else if(pub_pk) {
 			command = Command::ENCRYPT;
@@ -270,7 +285,7 @@ int main(int argc, char *argv[])
 
 	const unsigned char pers[] = "eyas_rsa_oaep_encrypt_voe";
 
-	if(pub_pk && pri_pk) {
+	if(command == Command::CHECK_KEYS) {
 		/// check keys
 		int ret = mbedtls_pk_check_pair(pub_pk, pri_pk);
 		if( ret != 0 ) {
@@ -310,7 +325,12 @@ int main(int argc, char *argv[])
 		nDebug() << "Done" << (o_ohex? "HEX": "BIN") << " output generated";
 	}
 	else if(command == Command::DECRYPT && !input.empty() && pri_pk) {
+		nDebug().nospace() << "Input:\n" << dump_digest(input);
 		mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*pri_pk);
+		if( input.length() != rsa->len ) {
+			nError() << "invalid input length:" << input.length() << "should be:" << rsa->len;
+			return -1;
+		}
 		rsa->padding = MBEDTLS_RSA_PKCS_V21;
 		rsa->hash_id = MBEDTLS_MD_SHA1;
 		unsigned char buff[rsa->len];
@@ -325,7 +345,8 @@ int main(int argc, char *argv[])
 		}
 		{
 			size_t olen;
-			int ret = mbedtls_rsa_pkcs1_decrypt( rsa, mbedtls_ctr_drbg_random, &ctr_drbg, MBEDTLS_RSA_PUBLIC
+			int ret = mbedtls_rsa_pkcs1_decrypt( rsa, mbedtls_ctr_drbg_random
+												 , &ctr_drbg, MBEDTLS_RSA_PRIVATE
 												 , &olen
 												 , (const unsigned char*)input.data()
 												 , buff, sizeof(buff) );
@@ -335,8 +356,7 @@ int main(int argc, char *argv[])
 			}
 			digest = std::string(buff, buff + olen);
 		}
-		nDebug() << "Decrypted:" << digest;
-		nDebug() << "hex:" << hex(digest);
+		nDebug().nospace() << "Decrypted:\n" << dump_digest(digest);
 		if(o_ohex)
 			std::cout << hex(digest);
 		else
