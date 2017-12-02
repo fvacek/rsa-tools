@@ -177,8 +177,13 @@ int main(int argc, char *argv[])
 
 	std::string input;// = "ahoj babi";
 	if(!o_no_input) {
-		std::cin >> input;
-		nDebug() << "input:" << input;
+		while(true) {
+			int c = std::cin.get();
+			if(c < 0)
+				break;
+			input.push_back((char)c);
+		}
+		nDebug() << "input:" << input << hex(input);
 		if(o_ihex) {
 			input = unhex(input);
 		}
