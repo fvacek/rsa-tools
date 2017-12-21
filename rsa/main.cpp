@@ -134,8 +134,31 @@ std::string error2string(int err_no)
 	return "-" + int_to_hex(-err_no) + ": " + std::string(buff);
 }
 
+void print_help_and_exit()
+{
+	std::cout << "Simple RSA-OAEP tool which\n\n"
+				 "ENCRYPTS stdin when certificate or public key is provided or\n"
+				 "DECRYPTS stdin when private key is provided or\n"
+				 "CHECKS keys when private key and (public key or certificate) are provided\n"
+				 "\noptions:\n"
+				 "\t-h, --help: this help\n"
+				 "\t-c, --certificate: certificate file\n"
+				 "\t-b, --pub-key: public key file\n"
+				 "\t-r, --pri-key: private key file\n"
+				 "\t-p, --pri-key-password: private key password\n"
+				 "\t--ihex, --ohex, --hex: input, otput, both is in HEX text format\n"
+				 "exaples:\n"
+				 "encrypt: echo -n \"top-seecret\" | ./rsa -c ~/t/crt/glogowska.crt --ohex > 1.hex\n"
+				 "decrypt: ./rsa -r ~/t/crt/glogowska.key --ihex < 1.hex\n"
+				 ;
+	exit(0);
+}
+
 int main(int argc, char *argv[])
 {
+	if(argc <= 1) {
+		print_help_and_exit();
+	}
 	enum class Command {UNKNOWN, ENCRYPT, DECRYPT, CHECK_KEYS, HELP};
 	Command command = Command::UNKNOWN;;
 	mbedtls_pk_context *pri_pk = nullptr;
@@ -150,7 +173,7 @@ int main(int argc, char *argv[])
 	for (int i = 1; i < argc; ++i) {
 		std::string arg(argv[i]);
 		if(arg == "-h" || arg == "--help")
-			command = Command::HELP;
+			print_help_and_exit();
 		else if(arg == "-c" || arg == "--certificate") {
 			certificate_file = argv[++i];
 		}
@@ -250,31 +273,7 @@ int main(int argc, char *argv[])
 	}
 
 	if(command == Command::UNKNOWN) {
-		if(pub_pk && pri_pk) {
-			command = Command::CHECK_KEYS;
-		}
-		else if(pub_pk) {
-			command = Command::ENCRYPT;
-		}
-		else if(pri_pk) {
-			command = Command::DECRYPT;
-		}
-		else {
-			nError() << "unsufficient input";
-			command = Command::HELP;
-		}
-	}
-
-	if(command == Command::HELP) {
-		std::cout << "commands:\n"
-					 "\t-h, --help: this help\n"
-					 "\t-c, --certificate: certificate file\n"
-					 "\t-b, --pub-key: public key file\n"
-					 "\t-r, --pri-key: private key file\n"
-					 "\t-p, --pri-key-password: private key password\n"
-					 "\t--ihex, --ohex, --hex: input, otput, both is in HEX text format\n"
-					 ;
-		return 0;
+		print_help_and_exit();
 	}
 
 	mbedtls_entropy_context entropy;
