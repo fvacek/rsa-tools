@@ -142,6 +142,7 @@ void print_help_and_exit()
 				 "CHECKS keys when private key and (public key or certificate) are provided\n"
 				 "\noptions:\n"
 				 "\t-h, --help: this help\n"
+				 "\t-v, --verbose: debug outbut\n"
 				 "\t-c, --certificate: certificate file\n"
 				 "\t-b, --pub-key: public key file\n"
 				 "\t-r, --pri-key: private key file\n"
@@ -159,7 +160,7 @@ int main(int argc, char *argv[])
 	if(argc <= 1) {
 		print_help_and_exit();
 	}
-	enum class Command {UNKNOWN, ENCRYPT, DECRYPT, CHECK_KEYS, HELP};
+	enum class Command {UNKNOWN, ENCRYPT, DECRYPT, CHECK_KEYS};
 	Command command = Command::UNKNOWN;;
 	mbedtls_pk_context *pri_pk = nullptr;
 	mbedtls_pk_context *pub_pk = nullptr;
@@ -167,7 +168,8 @@ int main(int argc, char *argv[])
 	std::string pri_key_file;
 	std::string pri_key_password;
 	std::string certificate_file;
-	bool o_no_input = false;
+	std::string input;// = "ahoj babi";
+	bool o_input = false;
 	bool o_ihex = false;
 	bool o_ohex = false;
 	for (int i = 1; i < argc; ++i) {
@@ -176,6 +178,9 @@ int main(int argc, char *argv[])
 			print_help_and_exit();
 		else if(arg == "-c" || arg == "--certificate") {
 			certificate_file = argv[++i];
+		}
+		else if(arg == "-v" || arg == "--verbose") {
+			NecroLog::setLogTreshold(NecroLog::Level::Debug);
 		}
 		else if(arg == "-r" || arg == "--pri-key") {
 			pri_key_file = argv[++i];
@@ -186,8 +191,9 @@ int main(int argc, char *argv[])
 		else if(arg == "-b" || arg == "--pub-key") {
 			pub_key_file = argv[++i];
 		}
-		else if(arg == "-n" || arg == "--no-input") {
-			o_no_input = true;
+		else if(arg == "-i" || arg == "--input") {
+			input = argv[++i];
+			o_input = true;
 		}
 		else if(arg == "--ihex") {
 			o_ihex = true;
@@ -204,27 +210,28 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if(o_ihex)
-		nDebug() << "Expecting HEX input";
-	else
-		nDebug() << "Expecting BIN input";
-	if(o_ohex)
-		nDebug() << "Generating HEX output";
-	else
-		nDebug() << "Generating BIN output";
+	if(pri_key_file.empty() || (pub_key_file.empty() && certificate_file.empty())) {
+		if(o_ihex)
+			nDebug() << "Expecting HEX input";
+		else
+			nDebug() << "Expecting BIN input";
+		if(o_ohex)
+			nDebug() << "Generating HEX output";
+		else
+			nDebug() << "Generating BIN output";
 
-	std::string input;// = "ahoj babi";
-	if(!o_no_input) {
-		while(true) {
-			int c = std::cin.get();
-			if(c < 0)
-				break;
-			input.push_back((char)c);
+		if(!o_input) {
+			while(true) {
+				int c = std::cin.get();
+				if(c < 0)
+					break;
+				input.push_back((char)c);
+			}
+			if(o_ihex) {
+				input = unhex(input);
+			}
+			//nDebug() << "input: (" << input.length() << ") " << input << hex(input);
 		}
-		if(o_ihex) {
-			input = unhex(input);
-		}
-		//nDebug() << "input: (" << input.length() << ") " << input << hex(input);
 	}
 
 	mbedtls_x509_crt x509;
@@ -273,16 +280,20 @@ int main(int argc, char *argv[])
 	}
 
 	if(command == Command::UNKNOWN) {
-		print_help_and_exit();
+		if(pub_pk && pri_pk) {
+			command = Command::CHECK_KEYS;
+		}
+		else if(pub_pk) {
+			command = Command::ENCRYPT;
+		}
+		else if(pri_pk) {
+			command = Command::DECRYPT;
+		}
+		else {
+			nError() << "unsufficient input";
+			print_help_and_exit();
+		}
 	}
-
-	mbedtls_entropy_context entropy;
-	mbedtls_entropy_init( &entropy );
-
-	mbedtls_ctr_drbg_context ctr_drbg;
-	mbedtls_ctr_drbg_init( &ctr_drbg );
-
-	const unsigned char pers[] = "eyas_rsa_oaep_encrypt_voe";
 
 	if(command == Command::CHECK_KEYS) {
 		/// check keys
@@ -293,77 +304,87 @@ int main(int argc, char *argv[])
 		}
 		nInfo() << "Key pair check OK";
 	}
-	else if(command == Command::ENCRYPT && !input.empty() && pub_pk) {
-		mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*pub_pk);
-		rsa->padding = MBEDTLS_RSA_PKCS_V21;
-		rsa->hash_id = MBEDTLS_MD_SHA1;
-		unsigned char buff[rsa->len];
-		{
-			nDebug() << "Seeding the random number generator...";
-			int ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, pers, sizeof( pers ) );
-			if( ret != 0 ) {
-				nError() << "failed: mbedtls_ctr_drbg_seed returned:" << error2string(ret);
+	else {
+		mbedtls_entropy_context entropy;
+		mbedtls_entropy_init( &entropy );
+
+		mbedtls_ctr_drbg_context ctr_drbg;
+		mbedtls_ctr_drbg_init( &ctr_drbg );
+
+		const unsigned char pers[] = "eyas_rsa_oaep_encrypt_voe";
+
+		if(command == Command::ENCRYPT && !input.empty() && pub_pk) {
+			mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*pub_pk);
+			rsa->padding = MBEDTLS_RSA_PKCS_V21;
+			rsa->hash_id = MBEDTLS_MD_SHA1;
+			unsigned char buff[rsa->len];
+			{
+				nDebug() << "Seeding the random number generator...";
+				int ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, pers, sizeof( pers ) );
+				if( ret != 0 ) {
+					nError() << "failed: mbedtls_ctr_drbg_seed returned:" << error2string(ret);
+					return -1;
+				}
+			}
+			{
+				int ret = mbedtls_rsa_pkcs1_encrypt( rsa, mbedtls_ctr_drbg_random, &ctr_drbg, MBEDTLS_RSA_PUBLIC, input.size(), (const unsigned char*)input.data(), buff );
+				if( ret != 0 ) {
+					nError() << "failed: mbedtls_rsa_pkcs1_encrypt returned:" << error2string(ret);
+					return -1;
+				}
+			}
+			//for(size_t i = 0; i < rsa->len; i++ )
+			//	fprintf(stderr, "%02X%s", buff[i], ( i + 1 ) % 16 == 0 ? "\n" : " " );
+			std::string digest(buff, buff + rsa->len);
+			nDebug().nospace() << "Digest:\n" << dump_digest(digest);
+			if(o_ohex)
+				std::cout << hex(digest);
+			else
+				std::cout << digest;
+			nDebug() << "Done" << (o_ohex? "HEX": "BIN") << " output generated";
+		}
+		else if(command == Command::DECRYPT && !input.empty() && pri_pk) {
+			nDebug().nospace() << "Input:\n" << dump_digest(input);
+			mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*pri_pk);
+			if( input.length() != rsa->len ) {
+				nError() << "invalid input length:" << input.length() << "should be:" << rsa->len;
 				return -1;
 			}
-		}
-		{
-			int ret = mbedtls_rsa_pkcs1_encrypt( rsa, mbedtls_ctr_drbg_random, &ctr_drbg, MBEDTLS_RSA_PUBLIC, input.size(), (const unsigned char*)input.data(), buff );
-			if( ret != 0 ) {
-				nError() << "failed: mbedtls_rsa_pkcs1_encrypt returned:" << error2string(ret);
-				return -1;
+			rsa->padding = MBEDTLS_RSA_PKCS_V21;
+			rsa->hash_id = MBEDTLS_MD_SHA1;
+			unsigned char buff[rsa->len];
+			std::string digest;
+			{
+				nDebug() << "Seeding the random number generator...";
+				int ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, pers, sizeof( pers ) );
+				if( ret != 0 ) {
+					nError() << "failed: mbedtls_ctr_drbg_seed returned:" << error2string(ret);
+					return -1;
+				}
 			}
-		}
-		//for(size_t i = 0; i < rsa->len; i++ )
-		//	fprintf(stderr, "%02X%s", buff[i], ( i + 1 ) % 16 == 0 ? "\n" : " " );
-		std::string digest(buff, buff + rsa->len);
-		nDebug().nospace() << "Digest:\n" << dump_digest(digest);
-		if(o_ohex)
-			std::cout << hex(digest);
-		else
-			std::cout << digest;
-		nDebug() << "Done" << (o_ohex? "HEX": "BIN") << " output generated";
-	}
-	else if(command == Command::DECRYPT && !input.empty() && pri_pk) {
-		nDebug().nospace() << "Input:\n" << dump_digest(input);
-		mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*pri_pk);
-		if( input.length() != rsa->len ) {
-			nError() << "invalid input length:" << input.length() << "should be:" << rsa->len;
-			return -1;
-		}
-		rsa->padding = MBEDTLS_RSA_PKCS_V21;
-		rsa->hash_id = MBEDTLS_MD_SHA1;
-		unsigned char buff[rsa->len];
-		std::string digest;
-		{
-			nDebug() << "Seeding the random number generator...";
-			int ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, pers, sizeof( pers ) );
-			if( ret != 0 ) {
-				nError() << "failed: mbedtls_ctr_drbg_seed returned:" << error2string(ret);
-				return -1;
+			{
+				size_t olen;
+				int ret = mbedtls_rsa_pkcs1_decrypt( rsa, mbedtls_ctr_drbg_random
+													 , &ctr_drbg, MBEDTLS_RSA_PRIVATE
+													 , &olen
+													 , (const unsigned char*)input.data()
+													 , buff, sizeof(buff) );
+				if( ret != 0 ) {
+					nError() << "failed: mbedtls_rsa_pkcs1_decrypt returned:" << error2string(ret);
+					return -1;
+				}
+				digest = std::string(buff, buff + olen);
 			}
+			nDebug().nospace() << "Decrypted:\n" << dump_digest(digest);
+			if(o_ohex)
+				std::cout << hex(digest);
+			else
+				std::cout << digest;
 		}
-		{
-			size_t olen;
-			int ret = mbedtls_rsa_pkcs1_decrypt( rsa, mbedtls_ctr_drbg_random
-												 , &ctr_drbg, MBEDTLS_RSA_PRIVATE
-												 , &olen
-												 , (const unsigned char*)input.data()
-												 , buff, sizeof(buff) );
-			if( ret != 0 ) {
-				nError() << "failed: mbedtls_rsa_pkcs1_decrypt returned:" << error2string(ret);
-				return -1;
-			}
-			digest = std::string(buff, buff + olen);
-		}
-		nDebug().nospace() << "Decrypted:\n" << dump_digest(digest);
-		if(o_ohex)
-			std::cout << hex(digest);
-		else
-			std::cout << digest;
+		mbedtls_ctr_drbg_free( &ctr_drbg );
+		mbedtls_entropy_free( &entropy );
 	}
 
-	mbedtls_ctr_drbg_free( &ctr_drbg );
-	mbedtls_entropy_free( &entropy );
 	mbedtls_x509_crt_free(&x509);
 	mbedtls_pk_free(&pk_pub_ctx);
 	mbedtls_pk_free(&pk_pri_ctx);

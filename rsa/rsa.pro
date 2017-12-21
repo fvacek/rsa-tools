@@ -15,14 +15,17 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 INCLUDEPATH += \
-		../include \
-		/home/fanda/proj/mbedtls/include \
+		../necrolog \
+		#/home/fanda/proj/mbedtls/include \
 
 LIBS += \
-		-L/home/fanda/proj/mbedtls/build/library \
+		#-L/home/fanda/proj/mbedtls/build/library \
 		-lmbedx509 \
 		-lmbedtls \
 		-lmbedcrypto \
 
 
 SOURCES += main.cpp
+
+HEADERS += \
+    ../necrolog/necrolog.h

@@ -36,10 +36,12 @@ public:
 	{
 		return NecroLog(os, level, std::move(log_context));
 	}
+	static void setLogTreshold(Level level) { globalTreshold() = level; }
+	static bool shouldLog(Level level) { return (level <= globalTreshold()); }
 private:
 	class Necro {
 		friend class NecroLog;
-public:
+	public:
 		Necro(std::ostream &os, NecroLog::Level level, LogContext &&log_context)
 			: m_os(os)
 			, m_level(level)
@@ -77,10 +79,10 @@ public:
 			//	return std::string(file_name);
 			std::string ret(file_name);
 			auto ix = ret.find_last_of('/');
-		#ifndef __unix
+#ifndef __unix
 			if(ix == std::string::npos)
 				ix = ret.find_last_of('\\');
-		#endif
+#endif
 			if(ix != std::string::npos)
 				ret = ret.substr(ix + 1);
 			return ret;
@@ -137,11 +139,16 @@ public:
 		bool m_firstRun = true;
 		bool m_isTTI = false;
 	};
+	static inline Level& globalTreshold()
+	{
+		static Level global_treshold = Level::Info;
+		return global_treshold;
+	}
 private:
 	std::shared_ptr<Necro> m_necro;
 };
 
-#define nDebug() NecroLog::create(std::clog, NecroLog::Level::Debug, NecroLog::LogContext(__FILE__, __LINE__))
-#define nInfo() NecroLog::create(std::clog, NecroLog::Level::Info, NecroLog::LogContext(__FILE__, __LINE__))
-#define nWarning() NecroLog::create(std::clog, NecroLog::Level::Warning, NecroLog::LogContext(__FILE__, __LINE__))
-#define nError() NecroLog::create(std::clog, NecroLog::Level::Error, NecroLog::LogContext(__FILE__, __LINE__))
+#define nDebug() for(bool en = NecroLog::shouldLog(NecroLog::Level::Debug); en; en = false) NecroLog::create(std::clog, NecroLog::Level::Debug, NecroLog::LogContext(__FILE__, __LINE__))
+#define nInfo() for(bool en = NecroLog::shouldLog(NecroLog::Level::Info); en; en = false) NecroLog::create(std::clog, NecroLog::Level::Info, NecroLog::LogContext(__FILE__, __LINE__))
+#define nWarning() for(bool en = NecroLog::shouldLog(NecroLog::Level::Warning); en; en = false) NecroLog::create(std::clog, NecroLog::Level::Warning, NecroLog::LogContext(__FILE__, __LINE__))
+#define nError() for(bool en = NecroLog::shouldLog(NecroLog::Level::Error); en; en = false) NecroLog::create(std::clog, NecroLog::Level::Error, NecroLog::LogContext(__FILE__, __LINE__))
