@@ -152,6 +152,8 @@ void print_help_and_exit()
 				 "encrypt: echo -n \"top-seecret\" | ./rsa -c ~/t/crt/glogowska.crt --ohex > 1.hex\n"
 				 "decrypt: ./rsa -r ~/t/crt/glogowska.key --ihex < 1.hex\n"
 				 ;
+	std::cout << "\nLogging options:\n";
+	std::cout << NecroLog::cliHelp();
 	exit(0);
 }
 
@@ -172,15 +174,13 @@ int main(int argc, char *argv[])
 	bool o_input = false;
 	bool o_ihex = false;
 	bool o_ohex = false;
-	for (int i = 1; i < argc; ++i) {
-		std::string arg(argv[i]);
+	std::vector<std::string> args = NecroLog::setCLIOptions(argc, argv);
+	for (size_t i = 1; i < args.size(); ++i) {
+		const std::string &arg = args[i];
 		if(arg == "-h" || arg == "--help")
 			print_help_and_exit();
 		else if(arg == "-c" || arg == "--certificate") {
 			certificate_file = argv[++i];
-		}
-		else if(arg == "-v" || arg == "--verbose") {
-			NecroLog::setLogTreshold(NecroLog::Level::Debug);
 		}
 		else if(arg == "-r" || arg == "--pri-key") {
 			pri_key_file = argv[++i];
